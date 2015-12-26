@@ -413,9 +413,145 @@ UART以字符为单位进行数据传输。包括
 + 将SPSR_mode寄存器内容复制到CPSR中(恢复CPSR的动作会将T、F和I位自动恢复为异常发生前的值。)
 + 将LR中的值减去偏移量（偏移量根据异常类型的不同而有所不同）后存入PC，即转到产生异常前用户指令流中相应指令处；
 
-# ARM指令集	+	***指令的基本格式***	+	***条件码***	+	***指令：尤其是所有的load/store指令、所有加减法指令、MOV、BIC、所有的跳转指令、所有的程序状态寄存器访问指令。***# 弄懂实验一和实验二内容# ARM汇编语言与C语言的混合编程。# S3C2410A中断控制器的内部结构和特殊寄存器功能。##S3C2410A中断控制器的特殊寄存器功能
+# ARM指令集
+##指令的基本格式
+	<opcode>{<cond>}{S}<Rd>,<Rn>{,<opcode2>}
++ < opcode > 是指令注记符
++ < cond > 是指令执行条件
++ S 为是否影响CPSR寄存器的值
++ Rd 为目标寄存器
++ Rn 为第一个操作数的寄存器
++ opcode2 为第二个操作数
+##条件码
+|条件码|后缀|标志|含义|
+|:--:|:--|:--|:--||0000|EQ|Z=1|相等|0001|NE|Z=0|不相等|0010|CS/HS|C=1|无符号数大于或等于|0011|CC/LO|C=0|无符号数小于|0100|MI|N=1|负数|0101|PL|N=0|正数或零|0110|VS|V=1|溢出|0111|VC|V=0|没有溢出|1000|HI|C=1,Z=0|无符号数大于|1001|LS|C=0,Z=1|无符号数小于或等于|1010|GE|N=V|有符号数大于或等于|1011|LT|N!=V|有符号数小于|1100|GT|Z=0,N=V|有符号数大于|1101|LE|Z=1,N!=V|有符号数小于或等于|1110|AL|任何|无条件执行（指令默认条件）##指令
+
+###load/store指令
+	LDR	R0，[R1]		；R0←[R1]    STR	R0，[R1]		；[R1]←R0
+
++ LDR
+	+ LDR 加载字 LDRNEH R0, [LR,#-2]
+	+ LDRH 加载半字
+	+ LDRB 加载字节
++ STR
+	+ STR 加载字 LDRNEH R0, [LR,#-2]
+	+ STRH 加载半字
+	+ STRB 加载字节
++ LDM, STM 见寻址，高寄存器先入栈
+
+###加减法指令
+|助记符|说明|操作|条件码位置|
+|:--|:--|:--|:--|
+|ADD   Rd, Rn, operand2|加法运算指令|Rd←Rn+operand2|ADD{cond}{S}|
+|SUB   Rd, Rn, operand2|减法运算指令|Rd←Rn-operand2|SUB{cond}{S}|
+|RSB   Rd, Rn, operand2|逆向减法指令|Rd←operand2-Rn|RSB{cond}{S}|
+|ADC   Rd, Rn, operand2|带进位加法|Rd←Rn+operand2+Carry|ADC{cond}{S}|
+|SBC   Rd, Rn, operand2|带进位减法指令|Rd←Rn-operand2-(NOT)Carry|SBC{cond}{S}|
+|RSC   Rd, Rn, operand2|带进位逆向减法指令|Rd←operand2-Rn-(NOT)Carry|RSC{cond}{S}|
+
+###MOV
+MOV{cond}{S}    Rd,operand2
+
+	MOV		R1,#0x10		;R1←0x10     MOV		R0,R1			;R0←R1     MOVS	R3,R1,LSL #2	;R3←R1<<2，并影响标志位 
+
+###BIC
+BIC{cond}{S}    Rd,Rn, operand2   
+		
+	BIC     R1,R1,#0x0F	;将R1的低4位清零，其它位不变 
+	BIC     R1,R2,R3	;将R3的反码和R2相逻辑“与”，						;结果保存到R1中
+			
+###B
+1. B：转移指令 2. BL：带链接的转移指令 3. BX：带状态切换的转移指令 4. BLX：带链接和状态切换的转移指令 
+###MRS, MSR1. MRS: 状态寄存器到通用寄存器的传送指令2. MSR: 通用寄存器到状态寄存器的传送指令
+# 弄懂实验一和实验二内容
+##code1
+
+	.global _start
+	.text
+		.equ num,20					/* Set number of words to be copied */
+	_start:
+		ldr		r0, =src			/* r0 = pointer to source block */
+		ldr		r1, =dst			/* r1 = pointer to destination block */
+		mov		r2, #num			/* r2 = number of words to copy */
+		mov		sp, #0x400			/* set up stack pointer (r13) */
+	blockcopy:
+		movs	r3,r2, LSR #3		/* number of eight word multiples */
+		beq		copywords			/* less than eight words to move ? */
+		stmfd	sp!, {r4-r11}		/* save some working registers */
+	octcopy:
+		ldmia	r0!, {r4-r11}		/* load 8 words from the source */
+		stmia	r1!, {r4-r11}		/* and put them at the destination */
+		subs	r3, r3, #1			/* decrement the counter */
+		bne		octcopy				/* ... copy more */
+		ldmfd	sp!, {r4-r11}		/* don't need these now - restore originals */
+	copywords:
+		ands	r2, r2, #7			/* number of odd words to copy */
+		beq		stop				/* No words left to copy ? */
+	wordcopy:
+		ldr		r3, [r0], #4		/* a word from the source */
+		str		r3, [r1], #4		/* store a word to the destination */
+		subs	r2, r2, #1			/* decrement the counter */
+		bne		wordcopy			/* ... copy more */
+	stop:
+		b		stop
+		
+	.ltorg
+	src:
+		.long	1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4
+	dst:
+		.long	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	.end	
+	
+##code2
+
+	.equ x, 45
+	.equ y, 64
+	.equ stack_top, 0x1000
+	.global _start
+	.text
+	_start:
+		mov		sp, #stack_top
+		mov		r0, #x				/* put x value into R0 */
+		str		r0, [sp]			/* save the value of R0 into stacks */
+		mov		r0, #y				/* put y value into R0 */
+		ldr		r1, [sp]			/* read the data from stack,and put it into R1 */
+		add		r0, r0, r1
+		str		r0, [sp]
+	stop:
+		b		stop
+	.end
+	
+##code3
+	.global _start
+	.text
+	.equ num,2
+	_start:
+		mov 	r0, #0		/* set up the three parameters */
+		mov 	r1, #3
+		mov 	r2, #2
+		bl 		arithfunc	/* call the function */
+	stop:	
+		b 		stop
+	arithfunc:				# According R0 valude to execute the code
+		cmp		r0, #num
+		bhs		DoAdd		/* If code is >=2 then do operation 0. */
+		
+		adr		r3, JumpTable		/* Load address of jump table */
+		ldr		pc, [r3,r0,lsl#2]	/* Jump to the appropriate routine */
+	JumpTable:
+		.long	DoAdd
+		.long	DoSub
+		
+	DoAdd:
+		add		r0, r1, r2
+		mov 	pc, lr
+	DoSub:
+		sub		r0, r1, r2
+		mov		pc, lr
+	.end
+# ARM汇编语言与C语言的混合编程。# S3C2410A中断控制器的内部结构和特殊寄存器功能。##S3C2410A中断控制器的特殊寄存器功能
 |寄存器|地址|R/W|描述|复位值|
-|:--:|--|:--:|--|:--:|
+|:--:|:--|:--:|:--|:--:|
 |SRCPND|0X4A000000|R/W|中断源挂起寄存器，为0时，无中断请求；当有中断产生，相应位置1。所有来自中断源的中断请求首先被登记到中断源挂起寄存器中。|0x00000000|
 |INTMOD|0X4A000004 |R/W|中断模式寄存器：0=IRQ模式，1=FIQ模式。多个IRQ中断的仲裁过程在优先级寄存器进行。|0x00000000|
 |INTMSK|0X4A000008 |R/W|中断屏蔽寄存器：0=允许中断，1=屏蔽中断。中断屏蔽寄存器的主要功能是屏蔽相应中断的请求，即使中断挂起寄存器的相应位已经置1，也就是说已经有相应的中断请求发生了；但是如果此时中断屏蔽寄存器的相应位置1，则中断控制器将屏蔽该中断请求CPU不会响应该中断。|0xFFFFFFFF||PRIORITY|0x4A00000C |R/W|IRQ中断优先级控制寄存器|0x7F|
@@ -425,9 +561,9 @@ UART以字符为单位进行数据传输。包括
 |INTSUBMSK|0X4A00001C |R/W|定义哪几个中断源屏蔽，只用[0～10]。0=中断服务允许，1=中断服务屏蔽|0x7FF|
 # S3C2410A与外部中断有关的控制寄存器及其特点##S3C2410A与外部中断有关的控制寄存器
 |寄存器|地址|读/写|描述|复位值|
-|--|--|--|--|--||EXTINT0|0x56000088|R/W|外部中断控制寄存器0 ，使用位[30:0]，分别对EINT7～EINT0触发信号进行配置。<br>000：低电平触发；001：高电平触发；<br>01x：下降沿下降；10x：上升沿触发；<br>11x：双边沿触发<br>位3、7、11、15、19、23和27没有使用。|0x0|
+|:--|:--|:--|:--|:--||EXTINT0|0x56000088|R/W|外部中断控制寄存器0 ，使用位[30:0]，分别对EINT7～EINT0触发信号进行配置。<br>000：低电平触发；001：高电平触发；<br>01x：下降沿下降；10x：上升沿触发；<br>11x：双边沿触发<br>位3、7、11、15、19、23和27没有使用。|0x0|
 |EXTINT1|0x5600008C|R/W|外部中断控制寄存器1，使用位[30:0]，分别对EINT15～EINT8触发信号进行配置。<br>000：低电平触发；001：高电平触发；<br>01x：下降沿下降；10x：上升沿触发；<br>11x：双边沿触发<br>位3、7、11、15、19、23和27没有使用。|0x0|
 |EXTINT2|0x56000090|R/W|外部中断控制寄存器2，使用位[30:0]，分别对EINT23～EINT16触发信号进行配置。<br>000：低电平触发；001：高电平触发；<br>01x：下降沿下降；10x：上升沿触发；<br>11x：双边沿触发<br>其中位31、27、23、19、15、11、7和3为EINT23～EINT16滤波器使能控制。<br>1：使能；0：不使能|0x0|
-# NAND Flash控制器特性及控制器结构（自动启动模式的时序）。
+# NAND Flash控制器特性、自动启动模式的时序。
 ##NAND Flash控制器特性+ NAND Flash模式：支持读/擦除/编程NAND Flash存储器。+ 自动启动模式：复位后，启动代码被传送到Steppingstone中。传送完毕后，启动代码在Steppingstone中执行。+ 具有硬件ECC产生模块（硬件生成校验码和通过软件校验）。+ 在NAND Flash启动后，Steppingstone 4KB内部SRAM缓冲器可以作为其他用途使用。+ NAND Flash控制器不能通过DMA访问，可以使用LDM/STM指令来代替DMA操作。
 ##NAND 自动启动模式的时序+ 完成复位；+ 当自动启动模式使能时，首先将NAND Flash存储器的前4 KB内容自动复制到Steppingstone 4KB内部缓冲器中；+ Steppingstone映射到nGCSO；+ CPU开始执行在Steppingstone 4KB内部缓冲器中的启动代码。
